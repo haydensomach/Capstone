@@ -6,13 +6,16 @@ audioDirHC  = '/Users/hayden/Documents/Minsk2020_ALS_database/HC';
 filesAls = dir(fullfile(audioDirAls, '**', '*.wav'));
 filesHC  = dir(fullfile(audioDirHC,  '**', '*.wav'));
 
-
-
 %debug>>>>
 %play file
 playWavFile('/Users/hayden/Documents/Minsk2020_ALS_database/HC/004_a.wav');
 
 [x, fs] = audioread('/Users/hayden/Documents/Minsk2020_ALS_database/HC/004_a.wav');
+
+
+%Trying to commit
+
+x = 1;
 
 % Convert to mono if needed
 if size(x,2) > 1
