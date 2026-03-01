@@ -212,51 +212,35 @@ end
 
 hold off;
 
-%% ================================================================
-%% ------------ FUNCTION PPQ5 --------------------
-function [localPPQ] = findPPQ5(statusStr, sexStr, vowelStr, dataA, dataI, fs)
+%% ----------- PLOT PERIOD ARRAY (from cycle timestamps) ----------
+% • Periods in seconds are diff(ts_list)
+% • Plot only if we have enough timestamps
 
-[~, cycleTS] = findFundamentalPeriodGroup(statusStr,sexStr,vowelStr, dataA, dataI, fs);
+if ~isempty(ts_list) && numel(ts_list) >= 3
+    T = diff(ts_list);   % periods (seconds)
 
-if strcmpi(vowelStr,'A')
-    temp_cycleTS = cycleTS.A;
+    disp(ts_list(658));
+
+    figure;
+    plot(T, '-o', 'LineWidth', 1.2);
+    grid on;
+    xlabel('Cycle Index');
+    ylabel('Period (s)');
+    title(sprintf('Period Array | %s | %s %s %s %s | subj %d', ...
+        it.file, it.status, it.sex, it.agegrp, it.vowel, it.subject));
+
+    % Optional: also show equivalent F0 per-cycle
+    % figure;
+    % plot(1./T, '-o', 'LineWidth', 1.2);
+    % grid on;
+    % xlabel('Cycle Index');
+    % ylabel('Instantaneous F0 (Hz)');
+    % title(sprintf('Instantaneous F0 | %s', it.file));
 else
-    temp_cycleTS = cycleTS.I;
+    warning('Not enough cycle timestamps to plot period array (need >= 3 timestamps).');
 end
 
-numFiles = length(temp_cycleTS);
-localPPQ = NaN(numFiles,1);
 
-for i = 1:numFiles
-
-    ts = temp_cycleTS{i};
-
-    % Need at least 6 timestamps -> 5 periods -> PPQ5 defined
-    if length(ts) < 6
-        continue
-    end
-
-    T = diff(ts);           % periods
-    N = length(T);
-
-    % Remove the first element
-    T(1) = [];
-
-    deviations = zeros(N-4,1);
-
-    for k = 3:N-3
-        localMean = (T(k-2) + T(k-1) + T(k) + T(k+1) + T(k+2)) / 5;
-        deviations(k-2) = abs(T(k) - localMean);
-    end
-
-    numerator = (1/(N-4)) * sum(deviations);
-    denominator = (1/N) * sum(T);
-
-    localPPQ(i) = numerator / denominator;
-
-end
-
-end
 
 %% ------------ FUNCTION JITTER --------------------
 function [localJitter] = findJitter(statusStr, sexStr, vowelStr, dataA, dataI, fs, plotBool)
@@ -452,66 +436,3 @@ end
 
 end
 
-%% ------------ FUNCTION SHIMMER --------------------
-function [localShimmer] = findShimmer(statusStr, sexStr, vowelStr, dataA, dataI, fs)
-
-[~, cycleTS] = findFundamentalPeriodGroup(statusStr,sexStr,vowelStr, dataA, dataI, fs);
-
-if strcmpi(vowelStr,'A')
-    temp_cycleTS = cycleTS.A;
-    data = dataA;
-else
-    temp_cycleTS = cycleTS.I;
-    data = dataI;
-end
-
-numFiles = length(temp_cycleTS);
-localShimmer = NaN(numFiles,1);
-
-for i = 1:numFiles
-
-    ts = temp_cycleTS{i};
-
-    % Need at least 3 timestamps -> 2 amplitude periods
-    if length(ts) < 3
-        continue
-    end
-
-    x = data{i}.audio;
-    x = x - mean(x);
-
-    % Convert timestamps to sample indices
-    ts_samples = round(ts * fs) + 1;
-
-    numPeriods = length(ts_samples) - 1;
-    A = zeros(numPeriods,1);
-
-    % ---- Compute peak-to-peak amplitude per period ----
-    for k = 1:numPeriods
-        idx1 = ts_samples(k);
-        idx2 = ts_samples(k+1) - 1;
-
-        if idx2 > length(x)
-            idx2 = length(x);
-        end
-
-        segment = x(idx1:idx2);
-        A(k) = max(segment) - min(segment);
-    end
-
-    % Remove first amplitude (consistent with jitter removing first T)
-    A(1) = [];
-
-    N = length(A);
-    if N < 2
-        continue
-    end
-
-    numerator = (1/(N-1)) * sum(abs(diff(A)));
-    denominator = (1/N) * sum(A);
-
-    localShimmer(i) = numerator / denominator;
-
-end
-
-end

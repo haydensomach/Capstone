@@ -158,6 +158,46 @@ for s = 1:size(jitterSpecs,1)
     JitterStats.(key).N_valid  = sum(~isnan(v));
 end
 
+% ===== PRINT FULL JITTER VECTORS (entire arrays) =====
+fprintf('\n========== FULL JITTER VECTORS (FRACTIONAL) ==========\n\n');
+
+keys = fieldnames(Jitter);
+
+for i = 1:numel(keys)
+    k = keys{i};
+    v = Jitter.(k);
+
+    fprintf('%s:\n', k);
+
+    if isempty(v)
+        fprintf('  [empty]\n\n');
+        continue
+    end
+
+    % Print entire vector on one line (scientific notation is nice for small values)
+    fprintf('  [');
+    fprintf(' %.6e', v);   % prints every element
+    fprintf(' ]\n\n');
+end
+
+% (Optional) also print in percent units:
+fprintf('\n========== FULL JITTER VECTORS (PERCENT) ==========\n\n');
+for i = 1:numel(keys)
+    k = keys{i};
+    v = 100 * Jitter.(k);
+
+    fprintf('%s:\n', k);
+
+    if isempty(v)
+        fprintf('  [empty]\n\n');
+        continue
+    end
+
+    fprintf('  [');
+    fprintf(' %.6f', v);   % percent values
+    fprintf(' ]\n\n');
+end
+
 %% ----------- Print summary (optional) -----------
 fprintf('\n========== JITTER RESULTS ==========\n\n')
 keys = fieldnames(JitterStats);
