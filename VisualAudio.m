@@ -1,13 +1,4 @@
-%% ================================================================
-%  Minsk2020 Audio Inspector (BRAND NEW SCRIPT)
-%  ------------------------------------------------
-%  Behavior:
-%   - Filter (optional) by Status/Sex/Age/Vowel ("All" = no filter)
-%   - Select ONE file
-%   - Enter start time + window duration
-%   - Plot that window
-%   - SCRIPT ENDS (no next/prev prompting)
-%% ================================================================
+%%This script allows the user to select a specific audio file and view the waveform over a given time interval.
 
 clear; clc; close all;
 

@@ -1,19 +1,5 @@
-%% ================================================================
-%  Minsk2020 Audio Inspector + Period Timestamps Overlay
-%  ------------------------------------------------
-%  Behavior:
-%   - Filter (optional) by Status/Sex/Age/Vowel ("All" = no filter)
-%   - Select ONE file
-%   - Enter start time + window duration
-%   - Plot waveform in that window
-%   - Overlay vertical dashed lines at cycle timestamps computed by
-%     your period detection (findFundamentalPeriodGroup)
-%   - SCRIPT ENDS
-%
-%  Notes:
-%   - No audio playback
-%   - Your jitter/shimmer/PPQ5 functions are included at the bottom
-%% ================================================================
+%Very comprehensive script. It does everything VisualAudio.m but also find jitter values and plots the 
+% calculated periods on the plot of the wave form.
 
 clear; clc; close all;
 
@@ -183,7 +169,7 @@ i2 = min(numel(x), floor(endSec*fs)+1);
 singleCell = {struct('audio', x)};
 
 % Call your period detection to get cycle timestamps
-[~, cycleTS] = findFundamentalPeriodGroup(it.status, it.sex, it.vowel, singleCell, singleCell, fs);
+[~, cycleTS] = findCycleTSGroup(it.status, it.sex, it.vowel, singleCell, singleCell, fs);
 
 if strcmpi(it.vowel,'A')
     ts_list = cycleTS.A{1};
@@ -219,7 +205,7 @@ hold off;
 if ~isempty(ts_list) && numel(ts_list) >= 3
     T = diff(ts_list);   % periods (seconds)
 
-    disp(ts_list(658));
+    T(1) = [];
 
     figure;
     plot(T, '-o', 'LineWidth', 1.2);
@@ -239,200 +225,3 @@ if ~isempty(ts_list) && numel(ts_list) >= 3
 else
     warning('Not enough cycle timestamps to plot period array (need >= 3 timestamps).');
 end
-
-
-
-%% ------------ FUNCTION JITTER --------------------
-function [localJitter] = findJitter(statusStr, sexStr, vowelStr, dataA, dataI, fs, plotBool)
-
-[~, cycleTS] = findFundamentalPeriodGroup(statusStr,sexStr,vowelStr, dataA, dataI, fs);
-
-if strcmpi(vowelStr,'A')
-    temp_cycleTS = cycleTS.A;
-else
-    temp_cycleTS = cycleTS.I;
-end
-
-numFiles = length(temp_cycleTS);
-localJitter = NaN(numFiles,1);
-
-for i = 1:numFiles
-
-    ts = temp_cycleTS{i};
-    % Need at least 3 timestamps -> 2 periods -> jitter defined
-    if length(ts) < 3
-        continue
-    end
-
-    T = diff(ts);           % periods (T_i)
-    N = length(T);
-
-    % Remove the first element
-    T(1) = [];
-
-    % -------- Optional Plot --------
-    if plotBool
-        figure;
-        plot(T, '-o');
-        xlabel('Cycle Index');
-        ylabel('Period Length (samples)');
-        title(sprintf('File %d Period Array', i));
-        grid on;
-    end
-    % --------------------------------
-
-    % Numerator: (1/(N-1)) * sum |T_{i+1} - T_i|
-    num = (1/(N-1)) * sum(abs(diff(T)));
-
-    % Denominator: (1/N) * sum T_i
-    den = (1/N) * sum(T);
-
-    % Local jitter
-    localJitter(i) = num / den;
-
-end
-
-end
-
-%% ------------ FUNCTION Fundemental period --------------------
-function [out, cycleTS] = findFundamentalPeriodGroup(statusStr, sexStr, vowelStr, dataA, dataI, fs)
-% findFundamentalPeriodGroup
-% Inputs:
-%   statusStr: 'ALS' or 'nonALS'
-%   sexStr:    'Male' or 'Female'
-%   vowelStr:  'A' or 'I'
-%   dataA:     cell array of structs with .audio
-%   dataI:     cell array of structs with .audio
-% Outputs:
-%   out:    struct with per-file F0 estimates + group averages
-%   cycleTS: struct with cycle timestamps for A and I (cell arrays)
-
-% Select which vowel data to process
-if strcmpi(vowelStr,'A')
-    groups = {dataA, sprintf('%s %s A', statusStr, sexStr)};
-elseif strcmpi(vowelStr,'I')
-    groups = {dataI, sprintf('%s %s I', statusStr, sexStr)};
-else
-    error('vowelStr must be ''A'' or ''I''.');
-end
-
-% ---- Settings  ----
-frameDur = 0.040;
-hopDur   = 0.010;
-frameLen = round(frameDur*fs);
-hopLen   = round(hopDur*fs);
-
-f0Min = 60;
-f0Max = 400;
-lagMin = round(fs/f0Max);
-lagMax = round(fs/f0Min);
-
-out = struct();
-cycleTS = struct();
-
-for g = 1:size(groups,1)
-
-    data  = groups{g,1};
-    label = groups{g,2};
-
-    f0_all_acf  = zeros(length(data),1);
-
-    % Number of columns = number of audio files
-    cycleTimestamps = cell(length(data),1);
-
-    for n = 1:length(data)
-        x = data{n}.audio;
-        x = x - mean(x);
-        N = length(x);
-
-        numFrames = floor((N - frameLen)/hopLen) + 1;
-        f0_frames = NaN(numFrames,1);
-
-        for m = 1:numFrames
-            idx1 = (m-1)*hopLen + 1;
-            idx2 = idx1 + frameLen - 1;
-
-            frame = x(idx1:idx2);
-            frame = frame - mean(frame);
-
-            [r,lags] = xcorr(frame, frame);
-            r = r(frameLen:end);
-            r = r / (r(1) + eps);
-            lags = lags(frameLen:end); %#ok<NASGU>
-
-            search = r(lagMin:lagMax);
-            [pk, idxPk] = max(search);
-            bestLag = lagMin + idxPk - 1;
-
-            if pk > 0.3
-                f0_frames(m) = fs / bestLag;
-            else
-                f0_frames(m) = NaN;
-            end
-        end
-
-        if all(isnan(f0_frames))
-            f0_all_acf(n) = NaN;
-        else
-            f0_all_acf(n) = median(f0_frames,'omitnan');
-        end
-
-        % >>> iterative cycle timestamp extraction using same ACF lag logic
-        % NOTE: I changed your original fixed start index (44100) to start at the beginning,
-        % so timestamps exist regardless of what window you choose to plot.
-        ts_samples = 1;                  % sample index of current "start" (1-based)
-        ts_list = 0;                     % timestamps in seconds, starts with 0
-
-        while (ts_samples + frameLen - 1) <= N
-            frame2 = x(ts_samples : ts_samples + frameLen - 1);
-            frame2 = frame2 - mean(frame2);
-
-            r2 = xcorr(frame2, frame2);
-            r2 = r2(frameLen:end);
-            r2 = r2 / (r2(1) + eps);
-
-            search2 = r2(lagMin:lagMax);
-            [pk2, idxPk2] = max(search2);
-            bestLag2 = lagMin + idxPk2 - 1;
-
-            if pk2 <= 0.3
-                break;  % stop when periodicity is weak
-            end
-
-            ts_samples = ts_samples + bestLag2;
-            if ts_samples > N
-                break;
-            end
-
-            tSamp = (ts_samples - 1) / fs;     % convert sample index to seconds
-            ts_list(end+1) = tSamp; %#ok<AGROW>
-
-            % safety stop if we're too close to the end to measure another period
-            if (ts_samples + lagMax) > N
-                break;
-            end
-        end
-
-        cycleTimestamps{n} = ts_list;
-        % <<<
-
-    end
-
-    % Average across group (printed if you ever call this on many files)
-    avgF0_acf = mean(f0_all_acf,'omitnan');
-    fprintf('%s Average F0 (ACF): %.2f Hz\n', label, avgF0_acf);
-
-    % Store outputs
-    if contains(label, ' A')
-        out.F0_A = f0_all_acf;
-        out.avgF0_A = avgF0_acf;
-        cycleTS.A = cycleTimestamps;
-    else
-        out.F0_I = f0_all_acf;
-        out.avgF0_I = avgF0_acf;
-        cycleTS.I = cycleTimestamps;
-    end
-end
-
-end
-

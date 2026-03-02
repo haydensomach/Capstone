@@ -1,9 +1,5 @@
-%% jitter_subgroup_runner.m
-% • Purpose:
-%   - Load Minsk2020 ALS + HC vowel files
-%   - Split into subgroups (ALS/HC × Male/Female × Age1/Age2 × A/I)
-%   - Compute jitter for each subgroup
-%   - Store jitter vectors + summary stats in arrays/structs
+%This script reads in the audio files and outputs arrays with jitter values. I have used this to
+%find a specific audio file that corresponds to a specific jitter
 
 clear; clc; close all;
 
@@ -147,8 +143,8 @@ for s = 1:size(jitterSpecs,1)
     dataA     = jitterSpecs{s,4};
     dataI     = jitterSpecs{s,5};
     key       = jitterSpecs{s,6};
-
-    v = findJitter(statusStr, sexStr, vowelStr, dataA, dataI, fs, 0);
+    
+    v = findJitterGroup(statusStr, sexStr, vowelStr, dataA, dataI, fs, 0);
 
     Jitter.(key) = v;
 
@@ -158,29 +154,7 @@ for s = 1:size(jitterSpecs,1)
     JitterStats.(key).N_valid  = sum(~isnan(v));
 end
 
-% ===== PRINT FULL JITTER VECTORS (entire arrays) =====
-fprintf('\n========== FULL JITTER VECTORS (FRACTIONAL) ==========\n\n');
-
-keys = fieldnames(Jitter);
-
-for i = 1:numel(keys)
-    k = keys{i};
-    v = Jitter.(k);
-
-    fprintf('%s:\n', k);
-
-    if isempty(v)
-        fprintf('  [empty]\n\n');
-        continue
-    end
-
-    % Print entire vector on one line (scientific notation is nice for small values)
-    fprintf('  [');
-    fprintf(' %.6e', v);   % prints every element
-    fprintf(' ]\n\n');
-end
-
-% (Optional) also print in percent units:
+%Print percent values for jitter in there respective arrays
 fprintf('\n========== FULL JITTER VECTORS (PERCENT) ==========\n\n');
 for i = 1:numel(keys)
     k = keys{i};
@@ -198,148 +172,11 @@ for i = 1:numel(keys)
     fprintf(' ]\n\n');
 end
 
-%% ----------- Print summary (optional) -----------
+%Prints the overall jitter results(mean +- SD)
 fprintf('\n========== JITTER RESULTS ==========\n\n')
 keys = fieldnames(JitterStats);
 for i = 1:numel(keys)
     k = keys{i};
     fprintf('%s Jitter: %.3f %% ± %.3f %%  (N=%d)\n', ...
         k, JitterStats.(k).mean_pct, JitterStats.(k).sd_pct, JitterStats.(k).N_valid);
-end
-
-%% ------------ FUNCTION JITTER --------------------
-function [localJitter] = findJitter(statusStr, sexStr, vowelStr, dataA, dataI, fs, plotBool)
-
-[~, cycleTS] = findFundamentalPeriodGroup(statusStr,sexStr,vowelStr, dataA, dataI, fs);
-
-if strcmpi(vowelStr,'A')
-    temp_cycleTS = cycleTS.A;
-else
-    temp_cycleTS = cycleTS.I;
-end
-
-numFiles = length(temp_cycleTS);
-localJitter = NaN(numFiles,1);
-
-for i = 1:numFiles
-
-    ts = temp_cycleTS{i};
-
-    % Need at least 3 timestamps -> 2 periods -> jitter defined
-    if length(ts) < 3
-        continue
-    end
-
-    T = diff(ts);           % periods (seconds)
-    N = length(T);
-
-    % Remove the first element (keep consistent with your pipeline)
-    T(1) = [];
-    N = length(T);
-
-    if N < 2
-        continue
-    end
-
-    % -------- Optional Plot --------
-    if plotBool
-        figure;
-        plot(T, '-o');
-        xlabel('Cycle Index');
-        ylabel('Period Length (s)');
-        title(sprintf('File %d Period Array', i));
-        grid on;
-    end
-    % --------------------------------
-
-    % Numerator: (1/(N-1)) * sum |T_{i+1} - T_i|
-    num = (1/(N-1)) * sum(abs(diff(T)));
-
-    % Denominator: (1/N) * sum T_i
-    den = (1/N) * sum(T);
-
-    localJitter(i) = num / den;
-
-end
-
-end
-
-%% ------------ FUNCTION Fundamental period --------------------
-function [out, cycleTS] = findFundamentalPeriodGroup(statusStr, sexStr, vowelStr, dataA, dataI, fs)
-
-if strcmpi(vowelStr,'A')
-    groups = {dataA, sprintf('%s %s A', statusStr, sexStr)};
-elseif strcmpi(vowelStr,'I')
-    groups = {dataI, sprintf('%s %s I', statusStr, sexStr)};
-else
-    error('vowelStr must be ''A'' or ''I''.');
-end
-
-frameDur = 0.040;
-frameLen = round(frameDur*fs);
-
-f0Min = 60;
-f0Max = 400;
-lagMin = round(fs/f0Max);
-lagMax = round(fs/f0Min);
-
-out = struct();
-cycleTS = struct();
-
-for g = 1:size(groups,1)
-
-    data  = groups{g,1};
-    label = groups{g,2};
-
-    cycleTimestamps = cell(length(data),1);
-
-    for n = 1:length(data)
-        x = data{n}.audio;
-        x = x - mean(x);
-        N = length(x);
-
-        % >>> iterative cycle timestamp extraction using same ACF lag logic
-        ts_samples = 44100;   % start index (1-based)
-        ts_list = 0;          % timestamps in seconds, starts with 0
-
-        while (ts_samples + frameLen - 1) <= N
-            frame2 = x(ts_samples : ts_samples + frameLen - 1);
-            frame2 = frame2 - mean(frame2);
-
-            r2 = xcorr(frame2, frame2);
-            r2 = r2(frameLen:end);
-            r2 = r2 / (r2(1) + eps);
-
-            search2 = r2(lagMin:lagMax);
-            [pk2, idxPk2] = max(search2);
-            bestLag2 = lagMin + idxPk2 - 1;
-
-            if pk2 <= 0.3
-                break;
-            end
-
-            ts_samples = ts_samples + bestLag2;
-            if ts_samples > N
-                break;
-            end
-
-            tSamp = (ts_samples - 1) / fs;
-            ts_list(end+1) = tSamp; %#ok<AGROW>
-
-            if (ts_samples + lagMax) > N
-                break;
-            end
-        end
-
-        cycleTimestamps{n} = ts_list;
-        % <<<
-    end
-
-    if contains(label, ' A')
-        cycleTS.A = cycleTimestamps;
-    else
-        cycleTS.I = cycleTimestamps;
-    end
-end
-
 end

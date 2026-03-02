@@ -1,3 +1,5 @@
+%This script is the main script that computes jitter/shimmer values
+
 clear; clc;
 %% ----------- Read in audio files ----------------
 audioDirAls = '/Users/hayden/Documents/Minsk2020_ALS_database/ALS';
