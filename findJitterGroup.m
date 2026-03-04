@@ -1,4 +1,3 @@
-
 function [localJitter] = findJitterGroup(statusStr, sexStr, vowelStr, dataA, dataI, fs, plotBool)
 
     [~, cycleTS] = findCycleTSGroup(statusStr, sexStr, vowelStr, dataA, dataI, fs);
